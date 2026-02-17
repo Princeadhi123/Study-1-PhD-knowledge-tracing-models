@@ -140,7 +140,6 @@ def run(df: pd.DataFrame, train_idx: np.ndarray, test_idx: np.ndarray) -> Dict[s
                 r_pad[i, :L] = torch.tensor(rows, dtype=torch.long)
         return it_pad, y_pad, r_pad, torch.tensor(lengths, dtype=torch.long)
 
-    train_loader = DataLoader(SeqDataset(train_seqs), batch_size=getattr(config, "DKT_BATCH", 32), shuffle=True, collate_fn=collate)
     test_loader = DataLoader(SeqDataset(test_seqs), batch_size=getattr(config, "DKT_BATCH", 32), shuffle=False, collate_fn=collate)
 
     class DKT(nn.Module):
@@ -168,7 +167,6 @@ def run(df: pd.DataFrame, train_idx: np.ndarray, test_idx: np.ndarray) -> Dict[s
     )
 
     # Prepare inner validation split over training students (for early stopping)
-    best_state = None
     best_val = float("inf")
     best_epoch = -1
     patience = int(getattr(config, "DKT_PATIENCE", 0))
@@ -191,72 +189,99 @@ def run(df: pd.DataFrame, train_idx: np.ndarray, test_idx: np.ndarray) -> Dict[s
         train_seqs_in = train_seqs
         val_seqs = []
 
-    train_loader = DataLoader(SeqDataset(train_seqs_in), batch_size=getattr(config, "DKT_BATCH", 32), shuffle=True, collate_fn=collate)
+    inner_train_loader = DataLoader(SeqDataset(train_seqs_in), batch_size=getattr(config, "DKT_BATCH", 32), shuffle=True, collate_fn=collate)
     val_loader = DataLoader(SeqDataset(val_seqs), batch_size=getattr(config, "DKT_BATCH", 32), shuffle=False, collate_fn=collate) if val_seqs else None
+    full_train_loader = DataLoader(SeqDataset(train_seqs), batch_size=getattr(config, "DKT_BATCH", 32), shuffle=True, collate_fn=collate)
     test_loader = DataLoader(SeqDataset(test_seqs), batch_size=getattr(config, "DKT_BATCH", 32), shuffle=False, collate_fn=collate)
 
-    # Train (respect time budget) with early stopping on validation loss if available
-    model.train()
-    start_time = time.perf_counter()
-    budget = getattr(config, "TRAIN_TIME_BUDGET_S", None)
-    for epoch in range(max(1, config.EPOCHS_DKT)):
-        if budget is not None and (time.perf_counter() - start_time) > float(budget):
-            break
-        for it_pad, y_pad, r_pad, lengths in train_loader:
-            it_pad = it_pad.to(device)
-            y_pad = y_pad.to(device)
-            lengths = lengths.to(device)
-            logits = model(it_pad, lengths)
-            # Next-item loss: compare logits[:, :-1] to y[:, 1:] where labels exist
+    # Phase 1: Train on inner split with early stopping to find best epoch count
+    def _train_one_epoch(mdl, loader, optimizer, criterion, dev):
+        mdl.train()
+        for it_pad, y_pad, r_pad, lengths in loader:
+            it_pad = it_pad.to(dev)
+            y_pad = y_pad.to(dev)
+            lengths = lengths.to(dev)
+            logits = mdl(it_pad, lengths)
             y_float = (y_pad == 1).float()
             mask = (y_pad != -1).float()
             if logits.size(1) > 1:
                 logits_n = logits[:, :-1]
                 y_n = y_float[:, 1:]
                 m_n = mask[:, 1:]
-                loss_raw = crit(logits_n, y_n)
+                loss_raw = criterion(logits_n, y_n)
                 loss = (loss_raw * m_n).sum() / (m_n.sum() + 1e-6)
             else:
-                # No next-step available for length-1 sequences in a batch
                 loss = (logits * 0).sum()
-            opt.zero_grad()
+            optimizer.zero_grad()
             loss.backward()
-            opt.step()
+            optimizer.step()
+
+    def _val_loss(mdl, loader, criterion, dev):
+        mdl.eval()
+        val_losses = []
+        with torch.no_grad():
+            for it_pad, y_pad, r_pad, lengths in loader:
+                it_pad = it_pad.to(dev)
+                y_pad = y_pad.to(dev)
+                lengths = lengths.to(dev)
+                logits = mdl(it_pad, lengths)
+                y_float = (y_pad == 1).float()
+                mask = (y_pad != -1).float()
+                if logits.size(1) > 1:
+                    logits_n = logits[:, :-1]
+                    y_n = y_float[:, 1:]
+                    m_n = mask[:, 1:]
+                    l_raw = criterion(logits_n, y_n)
+                    l = (l_raw * m_n).sum() / (m_n.sum() + 1e-6)
+                    val_losses.append(l.item())
+        return float(np.mean(val_losses)) if val_losses else float("inf")
+
+    model.train()
+    start_time = time.perf_counter()
+    budget = getattr(config, "TRAIN_TIME_BUDGET_S", None)
+    for epoch in range(max(1, config.EPOCHS_DKT)):
+        if budget is not None and (time.perf_counter() - start_time) > float(budget):
+            break
+        _train_one_epoch(model, inner_train_loader, opt, crit, device)
         # Validation
         if val_loader is not None:
-            model.eval()
-            with torch.no_grad():
-                val_losses = []
-                for it_pad, y_pad, r_pad, lengths in val_loader:
-                    it_pad = it_pad.to(device)
-                    y_pad = y_pad.to(device)
-                    lengths = lengths.to(device)
-                    logits = model(it_pad, lengths)
-                    y_float = (y_pad == 1).float()
-                    mask = (y_pad != -1).float()
-                    if logits.size(1) > 1:
-                        logits_n = logits[:, :-1]
-                        y_n = y_float[:, 1:]
-                        m_n = mask[:, 1:]
-                        l_raw = crit(logits_n, y_n)
-                        l = (l_raw * m_n).sum() / (m_n.sum() + 1e-6)
-                        val_losses.append(l.item())
-                val_loss = float(np.mean(val_losses)) if val_losses else float("inf")
-            # Early stopping check
+            val_loss = _val_loss(model, val_loader, crit, device)
             if val_loss < best_val - 1e-4:
                 best_val = val_loss
-                best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
                 best_epoch = epoch
                 wait = 0
             else:
                 wait += 1
                 if patience > 0 and wait >= patience:
                     break
-            model.train()
 
-    # Load best model if we have one
-    if best_state is not None:
-        model.load_state_dict(best_state)
+    # Phase 2: Retrain from scratch on ALL training data for best_epoch+1 epochs
+    # ONLY if we have time budget remaining.
+    elapsed = time.perf_counter() - start_time
+    if budget is None or elapsed < float(budget):
+        # Save Phase 1 weights in case Phase 2 yields nothing (e.g. 0 epochs)
+        phase1_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+
+        chosen_epochs = (best_epoch + 1) if best_epoch >= 0 else max(1, config.EPOCHS_DKT)
+        model = DKT(vocab=vocab_size, emb=getattr(config, "DKT_EMB_DIM", 32), hid=getattr(config, "DKT_HID_DIM", 64)).to(device)
+        opt = torch.optim.Adam(
+            model.parameters(), lr=float(getattr(config, "DKT_LR", 1e-3)), weight_decay=float(getattr(config, "DKT_WEIGHT_DECAY", 0.0))
+        )
+        model.train()
+
+        epochs_run = 0
+        for epoch in range(chosen_epochs):
+            if budget is not None and (time.perf_counter() - start_time) > float(budget):
+                break
+            _train_one_epoch(model, full_train_loader, opt, crit, device)
+            epochs_run += 1
+
+        # If we didn't complete even 1 epoch of Phase 2, revert to Phase 1 model
+        if epochs_run == 0:
+            model.load_state_dict(phase1_state)
+            diag["phase2_aborted"] = True
+    else:
+        diag["phase2_skipped"] = True
 
     # Evaluate: collect all per-step predictions with valid labels
     model.eval()
@@ -277,7 +302,7 @@ def run(df: pd.DataFrame, train_idx: np.ndarray, test_idx: np.ndarray) -> Dict[s
                 p_slice = probs[:, :-1]
                 r_slice = r_pad[:, 1:]
                 mask = (y_slice != -1)
-                y_true = (y_slice[mask]).float().cpu().numpy()
+                y_true = (y_slice[mask]).long().cpu().numpy()
                 y_prob = (p_slice[mask]).float().cpu().numpy()
                 r_vals = (r_slice[mask]).long().cpu().numpy()
                 if y_true.size:

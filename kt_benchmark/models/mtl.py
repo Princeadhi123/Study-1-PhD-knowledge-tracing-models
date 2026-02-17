@@ -176,7 +176,7 @@ def run(df: pd.DataFrame, train_idx: np.ndarray, test_idx: np.ndarray) -> Dict[s
         "category": "Multi-task",
         "name": "FKT-lite",
         "why": why,
-        "y_true": y_te_corr,
+        "y_true": y_te_corr.astype(int),
         "y_prob": y_prob,
         "test_rows": rows_te_next,
         "aux_mae_rt": mae,

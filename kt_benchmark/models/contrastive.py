@@ -203,7 +203,7 @@ def run(df: pd.DataFrame, train_idx: np.ndarray, test_idx: np.ndarray) -> Dict[s
 
     clf = LogisticRegression(
         C=float(best_C) if best_C is not None else 1.0,
-        max_iter=getattr(config, "CLKT_SUP_MAX_ITER", 800),
+        max_iter=getattr(config, "CLKT_SUP_MAX_ITER", 1000),
         class_weight="balanced",
         solver="lbfgs",
         random_state=config.RANDOM_STATE,
