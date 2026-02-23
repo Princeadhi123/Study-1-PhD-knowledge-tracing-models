@@ -112,7 +112,7 @@ METRICS_ORDER = [
     "Accuracy",
     "ROC-AUC",
     "Average Precision",
-    "F1",
+    "F1 Score",
     "Log Loss",
     # "Rank",  # optional; handled separately
 ]
@@ -128,7 +128,7 @@ METRIC_RANGES: Dict[str, Optional[tuple]] = {
     "Accuracy": (0.3, 1.0),
     "ROC-AUC": (0.3, 1.0),
     "Average Precision": (0.3, 1.0),
-    "F1": (0.3, 1.0),
+    "F1 Score": (0.3, 1.0),
     "Log Loss": None,  # auto; smaller is better
 }
 
@@ -142,7 +142,7 @@ def load_long_df(input_csv: Optional[str]) -> pd.DataFrame:
     if input_csv:
         df = pd.read_csv(input_csv)
     else:
-        default_path = Path(__file__).resolve().parent / "data" / "benchmark_summary_long.csv"
+        default_path = Path(__file__).resolve().parent / "benchmark_summary_long.csv"
         if default_path.exists():
             df = pd.read_csv(default_path)
         elif DEFAULT_DATA:
@@ -610,8 +610,11 @@ def _draw_single_heatmap_ranked(df: pd.DataFrame, outdir: Path) -> None:
         ranks = ranks.fillna(len(models))
         rank_tbl[(metric, dataset)] = ranks
 
-    # sort models by mean rank across all columns (ascending best at top)
-    order = rank_tbl.mean(axis=1).sort_values().index.tolist()
+    # Fixed display order (top to bottom)
+    FIXED_MODEL_ORDER = ["TIRT", "LogisticRegression", "DKT", "BKT", "FKT", "AdaptKT", "CLKT", "GKT", "Rasch 1PL"]
+    order = [m for m in FIXED_MODEL_ORDER if m in models]
+    # Append any models not in the fixed list at the end
+    order += [m for m in models if m not in order]
     rank_tbl = rank_tbl.loc[order]
     tbl = tbl.loc[order]
 

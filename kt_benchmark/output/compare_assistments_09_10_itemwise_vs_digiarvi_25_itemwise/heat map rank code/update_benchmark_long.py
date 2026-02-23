@@ -15,9 +15,9 @@ except Exception:  # pragma: no cover
 METRIC_COLS = ["accuracy", "roc_auc", "avg_precision", "f1", "log_loss"]
 METRIC_NAMES = {
     "accuracy": "Accuracy",
-    "roc_auc": "ROC AUC",
+    "roc_auc": "ROC-AUC",
     "avg_precision": "Average Precision",
-    "f1": "F1",
+    "f1": "F1 Score",
     "log_loss": "Log Loss",
 }
 MODEL_DISPLAY = {
