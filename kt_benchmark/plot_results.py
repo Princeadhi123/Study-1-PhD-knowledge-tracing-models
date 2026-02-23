@@ -1249,10 +1249,10 @@ def plot_metric_bars(metrics: pd.DataFrame, outdir: Path):
     sns.set(style="whitegrid", context="paper")
     # Removed Brier at user's request; keep five metrics
     metric_cols = [
-        ("roc_auc", "ROC AUC (↑)"),
+        ("roc_auc", "ROC-AUC (↑)"),
         ("accuracy", "Accuracy (↑)"),
         ("avg_precision", "Average Precision (↑)"),
-        ("f1", "F1 (↑)"),
+        ("f1", "F1 Score (↑)"),
         ("log_loss", "Log Loss (↓)"),
     ]
     # Dynamic grid (3 columns)
@@ -1301,9 +1301,9 @@ def plot_metric_radar_ranks(metrics: pd.DataFrame, outdir: Path):
     sns.set(style="whitegrid", context="paper")
     metric_defs = [
         ("accuracy", True, "Accuracy"),
-        ("roc_auc", True, "ROC AUC"),
+        ("roc_auc", True, "ROC-AUC"),
         ("avg_precision", True, "Average Precision"),
-        ("f1", True, "F1"),
+        ("f1", True, "F1 Score"),
         ("log_loss", False, "Log Loss"),
     ]
     # Filter to available metrics
@@ -1483,7 +1483,7 @@ def plot_metric_overall_rank_bars(metrics: pd.DataFrame, outdir: Path):
     ax.set_yticks(y, labels=df["model_display"].tolist())
     ax.invert_yaxis()  # best (lowest total rank) at top
     ax.set_xlabel("Sum of Ranks")
-    ax.set_title("Sum of Ranks across Accuracy, ROC AUC, AP, F1, Log Loss")
+    ax.set_title("Sum of Ranks across Accuracy, ROC-AUC, AP, F1 Score, Log Loss")
     # Annotate total rank values
     for yi, val in zip(y, df["total_score"].values):
         ax.text(val + 0.2, yi, f"{int(val)}", va="center", fontsize=9)
