@@ -673,6 +673,7 @@ def _draw_single_heatmap_ranked(df: pd.DataFrame, outdir: Path) -> None:
             cbar.ax.tick_params(labelsize=19)
             for lbl in cbar.ax.get_yticklabels():
                 lbl.set_fontweight("bold")
+            cbar.ax.invert_yaxis()  # Flip: Rank 1 at top, highest rank at bottom
     except Exception:
         pass
     # Horizontal x labels (three-line max), bigger and bold
