@@ -671,9 +671,13 @@ def _draw_single_heatmap_ranked(df: pd.DataFrame, outdir: Path) -> None:
         if cbar is not None:
             cbar.set_label("Rank", fontsize=19, fontweight="bold")
             cbar.ax.tick_params(labelsize=19)
+            # Invert colorbar axis to show red at top, blue at bottom
+            cbar.ax.invert_yaxis()
+            # Set tick labels to show 9 at top, 1 at bottom (matching reference image)
+            cbar.set_ticks(np.arange(1.5, n_models + 1, 1))
+            cbar.set_ticklabels([str(n_models - i) for i in range(n_models)])
             for lbl in cbar.ax.get_yticklabels():
                 lbl.set_fontweight("bold")
-            cbar.ax.invert_yaxis()  # Flip: Rank 1 at top, highest rank at bottom
     except Exception:
         pass
     # Horizontal x labels (three-line max), bigger and bold
